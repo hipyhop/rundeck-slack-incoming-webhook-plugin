@@ -13,7 +13,7 @@ See the [Included Plugins | Rundeck Documentation](http://rundeck.org/docs/plugi
 
 ## Download jarfile
 
-1. Download jarfile from [releases](https://github.com/higanworks/rundeck-slack-incoming-webhook-plugin/releases).
+1. Download jarfile from [releases](https://github.com/hipyhop/rundeck-slack-incoming-webhook-plugin/releases).
 2. copy jarfile to `$RDECK_BASE/libext`
 
 ## Build
