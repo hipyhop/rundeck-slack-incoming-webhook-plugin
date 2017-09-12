@@ -22,21 +22,23 @@ import com.dtolabs.rundeck.core.plugins.configuration.PropertyScope;
 import com.dtolabs.rundeck.plugins.descriptions.PluginDescription;
 import com.dtolabs.rundeck.plugins.descriptions.PluginProperty;
 import com.dtolabs.rundeck.plugins.notification.NotificationPlugin;
+import freemarker.cache.ClassTemplateLoader;
+import freemarker.cache.MultiTemplateLoader;
+import freemarker.cache.TemplateLoader;
+import freemarker.core.Configurable;
+import freemarker.template.Configuration;
+import freemarker.template.Template;
+import freemarker.template.TemplateException;
 
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLEncoder;
-import java.util.*;
-
-import freemarker.cache.ClassTemplateLoader;
-import freemarker.cache.FileTemplateLoader;
-import freemarker.cache.MultiTemplateLoader;
-import freemarker.cache.TemplateLoader;
-import freemarker.template.Configuration;
-import freemarker.template.Template;
-import freemarker.template.TemplateException;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Scanner;
+import java.util.TreeMap;
 
 /**
  * Sends Rundeck job notification messages to a Slack room.
@@ -51,15 +53,13 @@ public class SlackNotificationPlugin implements NotificationPlugin {
     private static final String SLACK_MESSAGE_COLOR_YELLOW = "warning";
     private static final String SLACK_MESSAGE_COLOR_RED = "danger";
 
-    private static final String SLACK_MESSAGE_FROM_NAME = "Rundeck";
-//    private static final String SLACK_EXT_MESSAGE_TEMPLATE_PATH = "/var/lib/rundeck/libext/templates";
     private static final String SLACK_MESSAGE_TEMPLATE = "slack-incoming-message.ftl";
 
     private static final String TRIGGER_START = "start";
     private static final String TRIGGER_SUCCESS = "success";
     private static final String TRIGGER_FAILURE = "failure";
 
-    private static final Map<String, SlackNotificationData> TRIGGER_NOTIFICATION_DATA = new HashMap<String, SlackNotificationData>();
+    private static final Map<String, SlackNotificationData> TRIGGER_NOTIFICATION_DATA = new TreeMap<>();
 
     private static final Configuration FREEMARKER_CFG = new Configuration();
 
@@ -115,13 +115,13 @@ public class SlackNotificationPlugin implements NotificationPlugin {
 
         String message = generateMessage(trigger, executionData, config);
         String slackResponse = invokeSlackAPIMethod(webhook_url, message);
-        String ms = "payload=" + URLEncoder.encode(message);
 
         if ("ok".equals(slackResponse)) {
             return true;
         } else {
             // Unfortunately there seems to be no way to obtain a reference to the plugin logger within notification plugins,
             // but throwing an exception will result in its message being logged.
+            String ms = "payload=" + urlEncode(message);
             throw new SlackNotificationPluginException("Unknown status returned from Slack API: [" + slackResponse + "]." + "\n" + ms);
         }
     }
@@ -131,32 +131,20 @@ public class SlackNotificationPlugin implements NotificationPlugin {
         String templateName = TRIGGER_NOTIFICATION_DATA.get(trigger).template;
         String color = TRIGGER_NOTIFICATION_DATA.get(trigger).color;
 
-        HashMap<String, Object> model = new HashMap<String, Object>();
+        HashMap<String, Object> model = new HashMap<>();
         model.put("trigger", trigger);
         model.put("color", color);
         model.put("executionData", executionData);
         model.put("config", config);
-//         model.put("channel", channel);
-//        if(username != null && !username.isEmpty()) {
-//            model.put("username", username);
-//        }
-//        if(icon_url != null && !icon_url.isEmpty()) {
-//            model.put("icon_url", icon_url);
-//        }
         StringWriter sw = new StringWriter();
         try {
             Template template = FREEMARKER_CFG.getTemplate(templateName);
             template.process(model,sw);
-
-        } catch (IOException ioEx) {
-            throw new SlackNotificationPluginException("Error loading Slack notification message template: [" + ioEx.getMessage() + "].", ioEx);
-        } catch (TemplateException templateEx) {
-            throw new SlackNotificationPluginException("Error merging Slack notification message template: [" + templateEx.getMessage() + "].", templateEx);
+        } catch (TemplateException | IOException e) {
+            throw new SlackNotificationPluginException("Error merging Slack notification message template: [" + e.getMessage() + "].", e);
         }
 
         return sw.toString();
-//        String mm = "{\"text\": \"This is posted from rundeck\"}";
-//        return urlEncode(mm);
     }
 
     private String urlEncode(String s) {
@@ -174,7 +162,7 @@ public class SlackNotificationPlugin implements NotificationPlugin {
 
         HttpURLConnection connection = null;
         InputStream responseStream = null;
-        String body = "payload=" + URLEncoder.encode(message);
+        String body = "payload=" + urlEncode(message);
         try {
             connection = openConnection(requestUrl);
             putRequestStream(connection, body);
@@ -223,21 +211,13 @@ public class SlackNotificationPlugin implements NotificationPlugin {
     }
 
     private InputStream getResponseStream(HttpURLConnection connection) {
-        InputStream input = null;
+        InputStream input;
         try {
             input = connection.getInputStream();
         } catch (IOException ioEx) {
             input = connection.getErrorStream();
         }
         return input;
-    }
-
-    private int getResponseCode(HttpURLConnection connection) {
-        try {
-            return connection.getResponseCode();
-        } catch (IOException ioEx) {
-            throw new SlackNotificationPluginException("Failed to obtain HTTP response: [" + ioEx.getMessage() + "].", ioEx);
-        }
     }
 
     private String getSlackResponse(InputStream responseStream) {
@@ -261,7 +241,7 @@ public class SlackNotificationPlugin implements NotificationPlugin {
     private static class SlackNotificationData {
         private String template;
         private String color;
-        public SlackNotificationData(String template, String color) {
+        private SlackNotificationData(String template, String color) {
             this.color = color;
             this.template = template;
         }
