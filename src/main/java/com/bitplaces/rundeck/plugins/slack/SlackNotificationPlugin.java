@@ -41,7 +41,7 @@ import java.util.Scanner;
 import java.util.TreeMap;
 
 /**
- * Sends Rundeck job notification messages to a Slack room.
+ * Sends Rundeck job notification messages to a Slack channel.
  *
  * @author Hayden Bakkum
  */
@@ -63,8 +63,28 @@ public class SlackNotificationPlugin implements NotificationPlugin {
 
     private static final Configuration FREEMARKER_CFG = new Configuration();
 
-    @PluginProperty(title = "WebHook URL", description = "Slack Incoming WebHook URL", required = true)
+    @PluginProperty(title = "WebHook URL", description = "The Slack incoming webhook URL to send notifications to",
+                    required = true, scope = PropertyScope.Project)
     private String webhook_url;
+
+    public SlackNotificationPlugin() {
+        ClassTemplateLoader builtInTemplate = new ClassTemplateLoader(SlackNotificationPlugin.class, "/templates");
+        TemplateLoader[] loaders = new TemplateLoader[]{builtInTemplate};
+        MultiTemplateLoader mtl = new MultiTemplateLoader(loaders);
+        FREEMARKER_CFG.setTemplateLoader(mtl);
+        try {
+            FREEMARKER_CFG.setSetting(Configuration.CACHE_STORAGE_KEY, "strong:20, soft:250");
+        } catch(Configurable.UnknownSettingException e) {
+            System.err.printf("Unknown FreeMarker setting '%s", Configuration.CACHE_STORAGE_KEY);
+        } catch(TemplateException e) {
+            System.err.printf("Failed to set FreeMarker setting '%s'. Error: %s", Configuration.CACHE_STORAGE_KEY, e.getMessage());
+        }
+
+        TRIGGER_NOTIFICATION_DATA.put(TRIGGER_START,   new SlackNotificationData(SLACK_MESSAGE_TEMPLATE, SLACK_MESSAGE_COLOR_YELLOW));
+        TRIGGER_NOTIFICATION_DATA.put(TRIGGER_SUCCESS, new SlackNotificationData(SLACK_MESSAGE_TEMPLATE, SLACK_MESSAGE_COLOR_GREEN));
+        TRIGGER_NOTIFICATION_DATA.put(TRIGGER_FAILURE, new SlackNotificationData(SLACK_MESSAGE_TEMPLATE, SLACK_MESSAGE_COLOR_RED));
+    }
+
 
     /**
      * Sends a message to a Slack room when a job notification event is raised by Rundeck.
@@ -76,39 +96,6 @@ public class SlackNotificationPlugin implements NotificationPlugin {
      * @return true, if the Slack API response indicates a message was successfully delivered to a chat room
      */
     public boolean postNotification(String trigger, Map executionData, Map config) {
-
-        String ACTUAL_SLACK_TEMPLATE;
-
-//        if(null != external_template && !external_template.isEmpty()) {
-//            try {
-//                FileTemplateLoader externalTemplate = new FileTemplateLoader(new File(SLACK_EXT_MESSAGE_TEMPLATE_PATH));
-//                System.err.printf("Found external template directory. Using it.\n");
-//                TemplateLoader[] loaders = new TemplateLoader[]{externalTemplate};
-//                MultiTemplateLoader mtl = new MultiTemplateLoader(loaders);
-//                FREEMARKER_CFG.setTemplateLoader(mtl);
-//                ACTUAL_SLACK_TEMPLATE = external_template;
-//            } catch (Exception e) {
-//                System.err.printf("No such directory: %s\n", SLACK_EXT_MESSAGE_TEMPLATE_PATH);
-//                return false;
-//            }
-//        }else{
-            ClassTemplateLoader builtInTemplate = new ClassTemplateLoader(SlackNotificationPlugin.class, "/templates");
-            TemplateLoader[] loaders = new TemplateLoader[]{builtInTemplate};
-            MultiTemplateLoader mtl = new MultiTemplateLoader(loaders);
-            FREEMARKER_CFG.setTemplateLoader(mtl);
-            ACTUAL_SLACK_TEMPLATE = SLACK_MESSAGE_TEMPLATE;
-//        }
-
-        TRIGGER_NOTIFICATION_DATA.put(TRIGGER_START,   new SlackNotificationData(ACTUAL_SLACK_TEMPLATE, SLACK_MESSAGE_COLOR_YELLOW));
-        TRIGGER_NOTIFICATION_DATA.put(TRIGGER_SUCCESS, new SlackNotificationData(ACTUAL_SLACK_TEMPLATE, SLACK_MESSAGE_COLOR_GREEN));
-        TRIGGER_NOTIFICATION_DATA.put(TRIGGER_FAILURE, new SlackNotificationData(ACTUAL_SLACK_TEMPLATE, SLACK_MESSAGE_COLOR_RED));
-
-        try {
-            FREEMARKER_CFG.setSetting(Configuration.CACHE_STORAGE_KEY, "strong:20, soft:250");
-        }catch(Exception e){
-            System.err.printf("Got and exception from Freemarker: %s", e.getMessage());
-        }
-
         if (!TRIGGER_NOTIFICATION_DATA.containsKey(trigger)) {
             throw new IllegalArgumentException("Unknown trigger type: [" + trigger + "].");
         }
@@ -150,8 +137,8 @@ public class SlackNotificationPlugin implements NotificationPlugin {
     private String urlEncode(String s) {
         try {
             return URLEncoder.encode(s, "UTF-8");
-        } catch (UnsupportedEncodingException unsupportedEncodingException) {
-            throw new SlackNotificationPluginException("URL encoding error: [" + unsupportedEncodingException.getMessage() + "].", unsupportedEncodingException);
+        } catch (UnsupportedEncodingException e) {
+            throw new SlackNotificationPluginException("URL encoding error: [" + e.getMessage() + "].", e);
         }
     }
 
